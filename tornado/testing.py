@@ -93,23 +93,7 @@ class AsyncTestCase(unittest.TestCase):
 
     def tearDown(self):
         if self.io_loop is not tornado.ioloop.IOLoop.instance():
-            # Try to clean up any file descriptors left open in the ioloop.
-            # This avoids leaks, especially when tests are run repeatedly
-            # in the same process with autoreload (because curl does not
-            # set FD_CLOEXEC on its file descriptors)
-            for fd in self.io_loop._handlers.keys()[:]:
-                if (fd == self.io_loop._waker_reader.fileno() or
-                    fd == self.io_loop._waker_writer.fileno()):
-                    # Close these through the file objects that wrap
-                    # them, or else the destructor will try to close
-                    # them later and log a warning
-                    continue
-                try:
-                    os.close(fd)
-                except:
-                    logging.debug("error closing fd %d", fd, exc_info=True)
-            self.io_loop._waker_reader.close()
-            self.io_loop._waker_writer.close()
+            self.io_loop.close()
         super(AsyncTestCase, self).tearDown()
 
     def get_new_ioloop(self):

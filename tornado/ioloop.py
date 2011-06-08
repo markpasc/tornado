@@ -387,6 +387,27 @@ class IOLoop(object):
         flags = fcntl.fcntl(fd, fcntl.F_GETFD)
         fcntl.fcntl(fd, fcntl.F_SETFD, flags | fcntl.FD_CLOEXEC)
 
+    def close(self):
+        # Try to clean up any file descriptors left open in the ioloop.
+        # This avoids leaks, especially when tests are run repeatedly
+        # in the same process with autoreload (because curl does not
+        # set FD_CLOEXEC on its file descriptors)
+        for fd in self._handlers.keys()[:]:
+            if (fd == self._waker_reader.fileno() or
+                fd == self._waker_writer.fileno()):
+                # Close these through the file objects that wrap
+                # them, or else the destructor will try to close
+                # them later and log a warning
+                continue
+            try:
+                os.close(fd)
+            except:
+                logging.debug("error closing fd %d", fd, exc_info=True)
+        self._waker_reader.close()
+        self._waker_writer.close()
+
+        self._impl.close()
+
 
 class _Timeout(object):
     """An IOLoop timeout, a UNIX timestamp and a callback"""
@@ -466,6 +487,9 @@ class _EPoll(object):
     def poll(self, timeout):
         return epoll.epoll_wait(self._epoll_fd, int(timeout * 1000))
 
+    def close(self):
+        pass
+
 
 class _KQueue(object):
     """A kqueue-based event loop for BSD/Mac systems."""
@@ -525,6 +549,9 @@ class _KQueue(object):
                 events[fd] = events.get(fd, 0) | IOLoop.ERROR
         return events.items()
 
+    def close(self):
+        self._kqueue.close()
+
 
 class _Select(object):
     """A simple, select()-based IOLoop implementation for non-Linux systems"""
@@ -564,6 +591,9 @@ class _Select(object):
         for fd in errors:
             events[fd] = events.get(fd, 0) | IOLoop.ERROR
         return events.items()
+
+    def close(self):
+        pass
 
 
 # Choose a poll implementation. Use epoll if it is available, fall back to
